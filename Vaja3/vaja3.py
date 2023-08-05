@@ -22,8 +22,8 @@ def read_flo_file(filename):
             print('Magic number incorrect. Invalid .flo file')
             return None
         else:
-            w = np.fromfile(f, np.int32, count=1)
-            h = np.fromfile(f, np.int32, count=1)
+            w = np.fromfile(f, np.int32, count=1)[0]
+            h = np.fromfile(f, np.int32, count=1)[0]
             data = np.fromfile(f, np.float32, count=2*w*h)
             # Reshape data into 3D array (columns, rows, bands)
             return np.resize(data, (int(h), int(w), 2))
@@ -61,7 +61,7 @@ def get_frames_in_folder(path):
         for file in f:
             if prevfile != "":
                 files = np.append(files, [[prevfile, os.path.join(r, file)]], axis=0)
-                prevfile = os.path.join(r, file)
+            prevfile = os.path.join(r, file)
     return files
 
 
@@ -260,3 +260,41 @@ class FlowNetSimple(nn.Module):
         l14 = self.conv4(l13)
         
         return l14
+    
+
+class EPELoss(nn.Module):
+    def __init__(self):
+        super(EPELoss,self).__init__()
+
+    def forward(self,flow_gt, flow):
+        epe = flow-flow_gt
+        euclid = np.sqrt(np.dot(epe.T, epe))
+        return euclid
+                
+
+def train(model, loss_fn, optimizer, epochs, dataset):
+    discriminator_loss_sum = 0
+    generator_loss_sum = 0
+    for epoch in range(1,epochs+1):
+        
+        for flow_gt,f1,f2 in dataset:
+            model_input = torch.cat((f1,f2), dim=1)
+            model.zero_grad()
+            flow_out = model(model_input)
+            loss = loss_fn(flow_gt,flow_out)
+            loss.backward()
+
+            optimizer.step()
+           
+            loss_sum += loss.item()
+        if epoch % 1000 == 0:
+            print(f"Epoch: {epoch}, Loss: {loss_sum/1000}")
+            loss_sum = 0
+            
+            
+model = FlowNetSimple()
+optim = torch.optim.Adam(model.parameters(), lr=0.0001)
+data_set = FlowDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\test")
+loss_fn = EPELoss()
+data_gen = DataLoader(data_set, batch_size=8,shuffle=True)
+train(model, loss_fn, optim, 500000, data_gen)
