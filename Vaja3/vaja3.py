@@ -72,6 +72,14 @@ def get_flows_in_folder(path):
             files = np.append(files, [[os.path.join(r, file)]], axis=0)
     return files
 
+#def a function that crops the first two dimensions of a numpy array to be devisable by 8
+def crop_array(flow):
+    h = flow.shape[0]
+    w = flow.shape[1]
+    h = h - h%8
+    w = w - w%8
+    return flow[0:h, 0:w, :]
+
 class FlowDataSet(Dataset):
     def __init__(self,path):
         self.flowarray = get_flows_in_folder(path+"/flow")
@@ -85,6 +93,16 @@ class FlowDataSet(Dataset):
         #read image to variable
         frame1 = cv2.imread(self.framearray[index][0])
         frame2 = cv2.imread(self.framearray[index][1])
+        frame1 = frame1.astype(np.float32)
+        frame2 = frame2.astype(np.float32)
+        frame1 = frame1/255
+        frame2 = frame2/255
+        frame1 = crop_array(frame1)
+        frame2 = crop_array(frame2)
+        flow = crop_array(flow)
+        #resize both frames and flow to be devisable by 8
+        
+        
         return flow, frame1, frame2
     
 #define a FlowNetSimple down block
@@ -122,12 +140,12 @@ class MaxPoolBlock(nn.Module):
 class ConvBatchReLUBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(ConvBatchReLUBlock, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding='same')
         self.batchnorm1 = nn.BatchNorm2d(out_channels)
-        self.relu1 = nn.ReLU(inplace=True)
-        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1)
+        self.relu1 = nn.ReLU()
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, padding='same')
         self.batchnorm2 = nn.BatchNorm2d(out_channels)
-        self.relu2 = nn.ReLU(inplace=True)
+        self.relu2 = nn.ReLU()
         
         
     def forward(self, x):
@@ -240,7 +258,8 @@ class FlowNetSimple(nn.Module):
         
     def forward(self, x):
         l11 = self.cbr1(x)
-        l21 = self.cbr2(self.maxpool(l11))
+        l21 = self.maxpool(l11)
+        l21 = self.cbr2(l21)
         l31 = self.cbr3(self.maxpool(l21))
         l41 = self.cbr4(self.maxpool(l31))
         
@@ -267,29 +286,32 @@ class EPELoss(nn.Module):
         super(EPELoss,self).__init__()
 
     def forward(self,flow_gt, flow):
-        epe = flow-flow_gt
-        euclid = np.sqrt(np.dot(epe.T, epe))
-        return euclid
+        error = torch.sqrt(torch.sum((flow_gt - flow) ** 2, axis=-1))
+        epe = torch.mean(error)
+        return epe
                 
 
 def train(model, loss_fn, optimizer, epochs, dataset):
-    discriminator_loss_sum = 0
-    generator_loss_sum = 0
+    loss_sum = 0
     for epoch in range(1,epochs+1):
         
         for flow_gt,f1,f2 in dataset:
+            f1 = torch.moveaxis(f1, -1, 1)
+            f2 = torch.moveaxis(f2, -1, 1)
             model_input = torch.cat((f1,f2), dim=1)
             model.zero_grad()
             flow_out = model(model_input)
+            flow_out = torch.moveaxis(flow_out, 1, -1)
             loss = loss_fn(flow_gt,flow_out)
             loss.backward()
 
             optimizer.step()
            
             loss_sum += loss.item()
-        if epoch % 1000 == 0:
-            print(f"Epoch: {epoch}, Loss: {loss_sum/1000}")
+        if epoch % 10 == 0:
+            print(f"Epoch: {epoch}, Loss: {loss_sum/10}")
             loss_sum = 0
+            torch.save(model.state_dict(), f"model_{epoch}.pth")
             
             
 model = FlowNetSimple()
