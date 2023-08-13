@@ -315,6 +315,7 @@ def train(model, loss_fn, optimizer, epochs, dataset):
             
             
 model = FlowNetSimple()
+model.load_state_dict(torch.load("model_160.pth"))
 optim = torch.optim.Adam(model.parameters(), lr=0.0001)
 data_set = FlowDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\test")
 loss_fn = EPELoss()
