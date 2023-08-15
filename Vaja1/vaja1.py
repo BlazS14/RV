@@ -42,8 +42,8 @@ class ImageDataSet(Dataset):
         img = cv2.imread(self.dirpath+dirlist[self.offsets[index][0]])
         img = cv2.resize(img, 320, 240)
         img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        x = random.randint(0+40,320-40)
-        y = random.randint(0+40,240-40)
+        x = random.randint(0+48,320-48)
+        y = random.randint(0+48,240-48)
         corners = np.array([[x-32,y-32],[x+32,y-32],[x+32,y+32],[x-32,y+32]], dtype=np.int32)
         transformed_corners = np.array([[x-32+random.randint(-16,16),y-32+random.randint(-16,16)],[x+32+random.randint(-16,16),y-32+random.randint(-16,16)],[x+32+random.randint(-16,16),y+32+random.randint(-16,16)],[x-32+random.randint(-16,16),y+32+random.randint(-16,16)]], dtype=np.int32)
         homography_matrix, _ = cv2.findHomography(corners,transformed_corners)
@@ -51,6 +51,8 @@ class ImageDataSet(Dataset):
         img = np.concatenate((img,transformed_img),axis=1)
         img = img/255
         return np.array(img).astype(np.float32),corners,transformed_corners,homography_matrix
+    
+    
 class ResNet(nn.Module):
     def __init__(self, in_channels, out_channels, stride=1):
         super(ResNet, self).__init__()
@@ -172,15 +174,11 @@ def train(discriminator_model, discriminator_optimizer, discriminator_loss_fn, g
             generator_loss_sum = 0
             discriminator_loss_sum = 0
             cv2.imwrite("img"+str(epoch)+".png",img)
-disc_model = Discriminator()
-disc_optim = torch.optim.Adam(disc_model.parameters(), lr=0.0002, betas=(0.5, 0.999))
-disc_loss_fn = nn.BCELoss()
-gen_model = Generator()
-gen_optim = torch.optim.Adam(gen_model.parameters(), lr=0.0002, betas=(0.5, 0.999))
-gen_loss_fn = nn.BCELoss()
-data_set = ImageDataSet()
-data_gen = DataLoader(data_set, batch_size=128,shuffle=True)
-train(disc_model, disc_optim, disc_loss_fn, gen_model, gen_optim, gen_loss_fn,
-      1000, 128, data_gen,create_identity(1))
-torch.save(disc_model, "model_Discriminator.pt")
-torch.save(gen_model, "model_Generator.pt")
+
+model = HomoNet()
+#model.load_state_dict(torch.load("model_3380.pth"))
+optim = torch.optim.Adam(model.parameters(), lr=0.0001)
+data_set = ImageDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\train")
+loss_fn = EPELoss()
+data_gen = DataLoader(data_set, batch_size=8,shuffle=True)
+train(model, loss_fn, optim, 500000, data_gen)

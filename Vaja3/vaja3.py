@@ -14,6 +14,12 @@ from skimage.metrics import structural_similarity as SSIM
 import torchinfo
 
 
+import torch_directml
+dml = torch_directml.device()
+#torch.set_default_device(dml)
+
+
+
 #read .flo file and convert it to a numpy array
 def read_flo_file(filename):
     with open(filename, 'rb') as f:
@@ -53,6 +59,29 @@ def visualize_flow(flow):
     plt.imshow(flow_img)
     plt.show()
     
+def save_flow(flow,name):
+    import matplotlib.pyplot as plt
+    from matplotlib import cm
+    u = flow[:, :, 0]
+    v = flow[:, :, 1]
+    #get the range of the flow values
+    max_val = np.max(flow)
+    min_val = np.min(flow)
+    #get the flow values in the range of 0-1
+    u_norm = (u - min_val) / (max_val - min_val)
+    v_norm = (v - min_val) / (max_val - min_val)
+    #get the flow values in the range of 0-255
+    u_norm = u_norm * 255
+    v_norm = v_norm * 255
+    #create a flow image
+    flow_img = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
+    flow_img[:, :, 0] = u_norm
+    flow_img[:, :, 1] = v_norm
+    #convert the image to RGB
+    flow_img = cv2.cvtColor(flow_img, cv2.COLOR_BGR2RGB)
+    #show the image
+    cv2.imwrite(name, flow_img)
+
 #get all files in folder and its subfolder and return an array of full paths to these files
 def get_frames_in_folder(path):
     files = np.empty((0,2))
@@ -293,31 +322,69 @@ class EPELoss(nn.Module):
 
 def train(model, loss_fn, optimizer, epochs, dataset):
     loss_sum = 0
+    loss_sum_cv = 0
     for epoch in range(1,epochs+1):
         
         for flow_gt,f1,f2 in dataset:
             f1 = torch.moveaxis(f1, -1, 1)
             f2 = torch.moveaxis(f2, -1, 1)
             model_input = torch.cat((f1,f2), dim=1)
-            model.zero_grad()
+            #model.zero_grad()
             flow_out = model(model_input)
             flow_out = torch.moveaxis(flow_out, 1, -1)
             loss = loss_fn(flow_gt,flow_out)
-            loss.backward()
+            
+            flow_out_cv = None
+            
+            f1 = cv2.cvtColor(torch.moveaxis(f1, 1, -1)[0].detach().cpu().numpy(), cv2.COLOR_BGR2GRAY)
+            f2 = cv2.cvtColor(torch.moveaxis(f2, 1, -1)[0].detach().cpu().numpy(), cv2.COLOR_BGR2GRAY)
+            flow_out_cv = cv2.calcOpticalFlowFarneback(f1, f2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+            #loss.backward()
+            loss_cv = loss_fn(flow_gt,flow_out_cv)
 
-            optimizer.step()
-           
+            #optimizer.step()
+            #visualize_flow(flow_out[0].detach().cpu().numpy())
+            #visualize_flow(flow_gt[0].detach().cpu().numpy())
             loss_sum += loss.item()
-        if epoch % 10 == 0:
-            print(f"Epoch: {epoch}, Loss: {loss_sum/10}")
+            loss_sum_cv += loss_cv.item()
+            
+            
+        if epoch % 1 == 0:
+            print(f"Epoch: {epoch}, Loss: {loss_sum/1}, Loss_cv: {loss_sum_cv/1}")
             loss_sum = 0
-            torch.save(model.state_dict(), f"model_{epoch}.pth")
+            loss_sum_cv = 0
+            #torch.save(model.state_dict(), f"model_{epoch}.pth")
             
             
 model = FlowNetSimple()
-model.load_state_dict(torch.load("model_160.pth"))
+model.load_state_dict(torch.load("model_480.pth"))
+torchinfo.summary(model, (1, 6, 384, 512))
+model.eval()
 optim = torch.optim.Adam(model.parameters(), lr=0.0001)
 data_set = FlowDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\test")
 loss_fn = EPELoss()
 data_gen = DataLoader(data_set, batch_size=8,shuffle=True)
-train(model, loss_fn, optim, 500000, data_gen)
+#train(model, loss_fn, optim, 500000, data_gen)
+prev = None
+counter = 0
+for p in get_frames_in_folder("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki"):
+    if prev != None:
+        f1 = cv2.imread(prev)
+        f2 = cv2.imread(p[1])
+        f1 = f1.astype(np.float32)
+        f2 = f2.astype(np.float32)
+        f1 = f1/255
+        f2 = f2/255
+        f1 = crop_array(f1)
+        f2 = crop_array(f2)
+        f1 = torch.from_numpy(f1)
+        f2 = torch.from_numpy(f2)
+        f1 = torch.moveaxis(f1, -1, 0)
+        f2 = torch.moveaxis(f2, -1, 0)
+        model_input = torch.cat((f1,f2), dim=0)
+        model_input = model_input.unsqueeze(0)
+        flow_out = model(model_input)
+        flow_out = torch.moveaxis(flow_out, 1, -1)
+        save_flow(flow_out[0].detach().cpu().numpy(), f"C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki\\flow_{counter}.png")
+        counter += 1
+    prev = p[1]
