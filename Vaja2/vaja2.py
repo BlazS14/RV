@@ -159,8 +159,87 @@ def generate_image(shepe_type,height,width):
         img,points = appy_homography_to_image(img,points)
         
         if get_color_differnece(img,50):
-            break
+            if len(points) > 0:
+                break
     return img, points
+    
+    
+    
+class ResNet(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResNet, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        self.stride = stride
+        # If the input and output channels don't match, we need to apply a 1x1 convolution to match the dimensions.
+        if in_channels != out_channels or stride != 1:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+        else:
+            self.shortcut = nn.Identity()
+    def forward(self, x):
+        residual = self.shortcut(x)
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out += residual
+        out = self.relu(out)
+        return out
+class HomoNet(nn.Module):
+    def __init__(self):
+        super(HomoNet, self).__init__()
+        self.resnet1 = ResNet(3, 64)
+        self.maxpool1 = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.resnet2 = ResNet(64, 64)
+        self.resnet3 = ResNet(64, 128)
+        self.resnet4 = ResNet(128, 128)
+        self.linear1 = nn.Linear(8192,512)
+        
+        self.conv1 = nn.Conv1d(512, 256, kernel_size=3, stride=1, padding=1, bias=False)
+        
+        self.batchnorm1 = nn.BatchNorm1d(256)
+        self.relu1 = nn.ReLU(inplace=True)
+        self.conv2 = nn.Conv1d(256, 65, kernel_size=1, stride=1, padding=1, bias=False)
+        
+        
+        self.softmax = nn.Softmax(dim=2)
+    def forward(self, x):
+        x = self.resnet1(x)
+        x = self.resnet2(x)
+        x = self.maxpool1(x)
+        x = self.resnet2(x)
+        x = self.resnet2(x)
+        x = self.maxpool1(x)
+        x = self.resnet3(x)
+        x = self.resnet4(x)
+        x = self.maxpool1(x)
+        x = self.resnet4(x)
+        x = self.resnet4(x)
+        
+        #x = self.avgpool(x)  
+        x = torch.flatten(x, 1) 
+       
+        x = self.conv1(x)
+        x = self.batchnorm1(x)
+        x = self.relu1(x)
+        x = self.conv2(x)
+        x = self.softmax(x)
+
+
+        return x
+    
+    
+    
+    
+    
+    
     
     
     
