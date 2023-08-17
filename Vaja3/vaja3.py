@@ -20,7 +20,6 @@ dml = torch_directml.device()
 
 
 
-#read .flo file and convert it to a numpy array
 def read_flo_file(filename):
     with open(filename, 'rb') as f:
         magic = np.fromfile(f, np.float32, count=1)
@@ -31,31 +30,23 @@ def read_flo_file(filename):
             w = np.fromfile(f, np.int32, count=1)[0]
             h = np.fromfile(f, np.int32, count=1)[0]
             data = np.fromfile(f, np.float32, count=2*w*h)
-            # Reshape data into 3D array (columns, rows, bands)
             return np.resize(data, (int(h), int(w), 2))
         
-#visualize .flo data from numpy array
 def visualize_flow(flow):
     import matplotlib.pyplot as plt
     from matplotlib import cm
     u = flow[:, :, 0]
     v = flow[:, :, 1]
-    #get the range of the flow values
     max_val = np.max(flow)
     min_val = np.min(flow)
-    #get the flow values in the range of 0-1
     u_norm = (u - min_val) / (max_val - min_val)
     v_norm = (v - min_val) / (max_val - min_val)
-    #get the flow values in the range of 0-255
     u_norm = u_norm * 255
     v_norm = v_norm * 255
-    #create a flow image
     flow_img = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
     flow_img[:, :, 0] = u_norm
     flow_img[:, :, 1] = v_norm
-    #convert the image to RGB
     flow_img = cv2.cvtColor(flow_img, cv2.COLOR_BGR2RGB)
-    #show the image
     plt.imshow(flow_img)
     plt.show()
     
@@ -64,25 +55,18 @@ def save_flow(flow,name):
     from matplotlib import cm
     u = flow[:, :, 0]
     v = flow[:, :, 1]
-    #get the range of the flow values
     max_val = np.max(flow)
     min_val = np.min(flow)
-    #get the flow values in the range of 0-1
     u_norm = (u - min_val) / (max_val - min_val)
     v_norm = (v - min_val) / (max_val - min_val)
-    #get the flow values in the range of 0-255
     u_norm = u_norm * 255
     v_norm = v_norm * 255
-    #create a flow image
     flow_img = np.zeros((flow.shape[0], flow.shape[1], 3), dtype=np.uint8)
     flow_img[:, :, 0] = u_norm
     flow_img[:, :, 1] = v_norm
-    #convert the image to RGB
     flow_img = cv2.cvtColor(flow_img, cv2.COLOR_BGR2RGB)
-    #show the image
     cv2.imwrite(name, flow_img)
 
-#get all files in folder and its subfolder and return an array of full paths to these files
 def get_frames_in_folder(path):
     files = np.empty((0,2))
     for r, d, f in os.walk(path):
@@ -101,7 +85,6 @@ def get_flows_in_folder(path):
             files = np.append(files, [[os.path.join(r, file)]], axis=0)
     return files
 
-#def a function that crops the first two dimensions of a numpy array to be devisable by 8
 def crop_array(flow):
     h = flow.shape[0]
     w = flow.shape[1]
@@ -134,7 +117,6 @@ class FlowDataSet(Dataset):
         
         return flow, frame1, frame2
     
-#define a FlowNetSimple down block
 '''class DownBlock(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(DownBlock, self).__init__()
@@ -212,7 +194,6 @@ class ConcatBlock(nn.Module):
         x = torch.cat((x,y), dim=1)
         return x
     
-#define a FlownetSimple encoder
 '''class FlowNetSimpleEncoder(nn.Module):
     def __init__(self):
         super(FlowNetSimpleEncoder, self).__init__()
@@ -260,7 +241,6 @@ class FlowNetSimpleDecoder(nn.Module):
         return x'''
 
 
-#define a FlowNetSimple model
 class FlowNetSimple(nn.Module):
     def __init__(self):
         super(FlowNetSimple, self).__init__()
@@ -297,6 +277,7 @@ class FlowNetSimple(nn.Module):
         l12 = self.concat(self.up3(l22), l11)
         
         l42 = self.conv1(l41)
+    
         
         l33 = self.concat(self.up2x2(l42), l32)
         l34 = self.conv2(l33)
@@ -307,7 +288,7 @@ class FlowNetSimple(nn.Module):
         l13 = self.concat(self.up2x2(l24), l12)
         l14 = self.conv4(l13)
         
-        return l14
+        return l14, l24, l34, l42
     
 
 class EPELoss(nn.Module):
@@ -319,6 +300,11 @@ class EPELoss(nn.Module):
         epe = torch.mean(error)
         return epe
                 
+def upscale_flow(flow, scale):
+    flow = torch.moveaxis(flow, -1, 1)
+    flow = torch.nn.functional.interpolate(flow, scale_factor=scale, mode='bilinear', align_corners=False)
+    flow = torch.moveaxis(flow, 1, -1)
+    return flow
 
 def train(model, loss_fn, optimizer, epochs, dataset):
     loss_sum = 0
@@ -329,45 +315,63 @@ def train(model, loss_fn, optimizer, epochs, dataset):
             f1 = torch.moveaxis(f1, -1, 1)
             f2 = torch.moveaxis(f2, -1, 1)
             model_input = torch.cat((f1,f2), dim=1)
-            #model.zero_grad()
-            flow_out = model(model_input)
+            model.zero_grad()
+            flow_out, fo1, fo2, fo3 = model(model_input)
             flow_out = torch.moveaxis(flow_out, 1, -1)
+            fo1 = torch.moveaxis(fo1, 1, -1)
+            fo2 = torch.moveaxis(fo2, 1, -1)
+            fo3 = torch.moveaxis(fo3, 1, -1)
+            
+            fo1 = upscale_flow(fo1, 2)
+            fo2 = upscale_flow(fo2, 4)
+            fo3 = upscale_flow(fo3, 8)
+            
             loss = loss_fn(flow_gt,flow_out)
+            loss_fo1 = loss_fn(flow_gt,fo1)
+            loss_fo2 = loss_fn(flow_gt,fo2)
+            loss_fo3 = loss_fn(flow_gt,fo3)
             
             flow_out_cv = None
             
             f1 = cv2.cvtColor(torch.moveaxis(f1, 1, -1)[0].detach().cpu().numpy(), cv2.COLOR_BGR2GRAY)
             f2 = cv2.cvtColor(torch.moveaxis(f2, 1, -1)[0].detach().cpu().numpy(), cv2.COLOR_BGR2GRAY)
             flow_out_cv = cv2.calcOpticalFlowFarneback(f1, f2, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-            #loss.backward()
+            loss.backward(retain_graph=True)
+            loss_fo1.backward(retain_graph=True)
+            loss_fo2.backward(retain_graph=True)
+            loss_fo3.backward()
             loss_cv = loss_fn(flow_gt,flow_out_cv)
 
-            #optimizer.step()
-            #visualize_flow(flow_out[0].detach().cpu().numpy())
-            #visualize_flow(flow_gt[0].detach().cpu().numpy())
+            optimizer.step()
+            
             loss_sum += loss.item()
             loss_sum_cv += loss_cv.item()
             
             
-        if epoch % 1 == 0:
-            print(f"Epoch: {epoch}, Loss: {loss_sum/1}, Loss_cv: {loss_sum_cv/1}")
+        if epoch % 10 == 0:
+            print(f"Epoch: {epoch}, Loss: {loss_sum/10}, Loss_cv: {loss_sum_cv/10}")
             loss_sum = 0
             loss_sum_cv = 0
-            #torch.save(model.state_dict(), f"model_{epoch}.pth")
+            visualize_flow(flow_out[0].detach().cpu().numpy())
+            visualize_flow(fo1[0].detach().cpu().numpy())
+            visualize_flow(fo2[0].detach().cpu().numpy())
+            visualize_flow(fo3[0].detach().cpu().numpy())
+            visualize_flow(flow_gt[0].detach().cpu().numpy())
+            torch.save(model.state_dict(), f"modelmultilevel_{epoch}.pth")
             
             
 model = FlowNetSimple()
-model.load_state_dict(torch.load("model_480.pth"))
+#model.load_state_dict(torch.load("model_480.pth"))
 torchinfo.summary(model, (1, 6, 384, 512))
-model.eval()
+#model.eval()
 optim = torch.optim.Adam(model.parameters(), lr=0.0001)
-data_set = FlowDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\test")
+data_set = FlowDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\train")
 loss_fn = EPELoss()
 data_gen = DataLoader(data_set, batch_size=8,shuffle=True)
-#train(model, loss_fn, optim, 500000, data_gen)
+train(model, loss_fn, optim, 500000, data_gen)
 prev = None
 counter = 0
-for p in get_frames_in_folder("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki"):
+'''for p in get_frames_in_folder("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki"):
     if prev != None:
         f1 = cv2.imread(prev)
         f2 = cv2.imread(p[1])
@@ -383,8 +387,11 @@ for p in get_frames_in_folder("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki"
         f2 = torch.moveaxis(f2, -1, 0)
         model_input = torch.cat((f1,f2), dim=0)
         model_input = model_input.unsqueeze(0)
-        flow_out = model(model_input)
+        flow_out, fo1, fo2, fo3 = model(model_input)
         flow_out = torch.moveaxis(flow_out, 1, -1)
+        fo1 = torch.moveaxis(fo1, 1, -1)
+        fo2 = torch.moveaxis(fo2, 1, -1)
+        fo3 = torch.moveaxis(fo3, 1, -1)
         save_flow(flow_out[0].detach().cpu().numpy(), f"C:\\Users\\GTAbl\\Desktop\\RV\\Vaja3\\data\\poki\\flow_{counter}.png")
         counter += 1
-    prev = p[1]
+    prev = p[1]'''

@@ -37,7 +37,6 @@ def generate_rectangle(img):
     else:
         max = width-40
     
-    # generate an image and a random rectangle
     points = generate_convex_quadrilateral_points(0,max)
     cv2.drawContours(img, [np.array(points)], 0, (random.randint(0, 256),random.randint(0, 256),random.randint(0, 256)), -1)
     return img, points
@@ -50,7 +49,6 @@ def generate_triangle(img):
     return img,np.array([p1,p2,p3])
 def generate_grid(img):
     '''height, width = img.shape[:2]
-    #generate a grid with random colors and save its points in an array
     points = generate_convex_quadrilateral_points(height,width)
     xnummax = min((points[0,0]-points[1,0],points[3,0]-points[2,0]))
     ynummax = min((points[0,1]-points[3,1],points[1,1]-points[2,1]))
@@ -73,7 +71,6 @@ def generate_star(img):
     height, width = img.shape[:2]
     point_array = np.empty((0,2), dtype=np.int32)
     center = [random.randint(0, height), random.randint(0, width)]
-    #generate 4 to 5 random points around center and connect them to the center
     point_array = np.append(point_array, [center], axis=0)
     for i in range(random.randint(4,5)):
         point = [random.randint(0, height), random.randint(0, width)]
@@ -82,8 +79,8 @@ def generate_star(img):
     return img, point_array
 def PSNR(original, compressed):
     mse = np.mean((original - compressed) ** 2)
-    if(mse == 0):  # MSE is zero means no noise is present in the signal .
-                  # Therefore PSNR have no importance.
+    if(mse == 0): 
+                  
         return 100
     max_pixel = 255.0
     psnr = 20 * log10(max_pixel / sqrt(mse))
@@ -110,14 +107,12 @@ def appy_homography_to_image(img,points):
     
     img = cv2.warpPerspective(img, homography_matrix, (width,height))
     
-    #apply homography to points
     i = 0
     l = len(points)
     while i < l:
         p = np.array([points[i][0],points[i][1],1])
         p = np.matmul(homography_matrix,p)
         p = np.array([p[0]/p[2],p[1]/p[2]])
-        #check if point is NOT inside image
         if p[0] < 0 or p[0] > width or p[1] < 0 or p[1] > height:
             np.delete(points,i)
             l -= 1
@@ -126,10 +121,8 @@ def appy_homography_to_image(img,points):
     
     return img, points
     
-#check if all rgb colors in image differ by a certain amount    
 def get_color_differnece(img,amount):
 
-    #get all unique rgb values in image into a list
     unique_colors = []
     for i in range(img.shape[0]):
         for j in range(img.shape[1]):
@@ -138,7 +131,6 @@ def get_color_differnece(img,amount):
                     break
                 unique_colors.append(img[i,j])
                 
-    #check if all rgb values differ by a certain amount
     for i in range(len(unique_colors)):
         for j in range(len(unique_colors)):
             if not (abs(unique_colors[i][0]-unique_colors[j][0]) > amount or abs(unique_colors[i][1]-unique_colors[j][1]) > amount or abs(unique_colors[i][2]-unique_colors[j][2]) > amount):
@@ -174,7 +166,6 @@ class ResNet(nn.Module):
         self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(out_channels)
         self.stride = stride
-        # If the input and output channels don't match, we need to apply a 1x1 convolution to match the dimensions.
         if in_channels != out_channels or stride != 1:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),

@@ -14,19 +14,6 @@ from skimage.metrics import structural_similarity as SSIM
 import torchinfo
 import csv
 
-#get geometric centre of points in array
-def get_centre(points):
-    x = 0
-    y = 0
-    counter = 0
-    for p in points:
-        if p[2] != 0 and p[3] != 0:
-            counter += 1
-            x += p[3]
-            y += p[2]
-    x /= len(points)
-    y /= len(points)
-    return x,y
 
 #get all files in folder and corresponding data from csv file
 def get_images(dirpath):
