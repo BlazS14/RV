@@ -352,11 +352,11 @@ def train(model, loss_fn, optimizer, epochs, dataset):
             print(f"Epoch: {epoch}, Loss: {loss_sum/10}, Loss_cv: {loss_sum_cv/10}")
             loss_sum = 0
             loss_sum_cv = 0
-            visualize_flow(flow_out[0].detach().cpu().numpy())
+            '''visualize_flow(flow_out[0].detach().cpu().numpy())
             visualize_flow(fo1[0].detach().cpu().numpy())
             visualize_flow(fo2[0].detach().cpu().numpy())
             visualize_flow(fo3[0].detach().cpu().numpy())
-            visualize_flow(flow_gt[0].detach().cpu().numpy())
+            visualize_flow(flow_gt[0].detach().cpu().numpy())'''
             torch.save(model.state_dict(), f"modelmultilevel_{epoch}.pth")
             
             

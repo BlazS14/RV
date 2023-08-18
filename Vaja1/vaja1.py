@@ -15,7 +15,7 @@ import torchinfo
 
 import torch_directml
 dml = torch_directml.device()
-torch.set_default_device(dml)
+#torch.set_default_device(dml)
 torch.set_default_dtype(torch.float32)
 
 
@@ -96,9 +96,16 @@ def show_corners_on_image(img,orig_corners,transformed_corners, model_corners):
     transformed_corners = transformed_corners.astype(np.int32)
     model_corners = model_corners.astype(np.int32)
     
-    cv2.rectangle(orig_img, (orig_corners[0,0],orig_corners[0,1]), (orig_corners[3,0],orig_corners[3,1]), (255,0,0), 1)
+    cv2.drawContours(orig_img, [orig_corners], 0, (255,0,0), 1) 
+    cv2.drawContours(orig_img, [transformed_corners], 0, (0,255,0), 1)
+    cv2.drawContours(orig_img, [model_corners], 0, (0,0,255), 1)   
+    
+    
+    
+    '''cv2.rectangle(orig_img, (orig_corners[0,0],orig_corners[0,1]), (orig_corners[3,0],orig_corners[3,1]), (255,0,0), 1)
     cv2.rectangle(orig_img, (transformed_corners[0,0],transformed_corners[0,1]), (transformed_corners[3,0],transformed_corners[3,1]), (0,255,0), 1)
     cv2.rectangle(orig_img, (model_corners[0,0],model_corners[0,1]), (model_corners[3,0],model_corners[3,1]), (0,0,255), 1)
+    '''
     cv2.imshow("img",orig_img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
@@ -198,7 +205,7 @@ def train(model, loss_fn, optim, epochs, data_gen):
         
             
         in_img = torch.moveaxis(img,-1,1)
-        model.zero_grad()
+        #model.zero_grad()
         model_corner_offsets = model(in_img)
         #ones_tensor = torch.ones((len(img), 1))
         #model_homo_matrix = torch.cat((model_homo_matrix, ones_tensor), dim=1)
@@ -208,8 +215,8 @@ def train(model, loss_fn, optim, epochs, data_gen):
         #model_homo_matrix, _ = cv2.findHomography(corners_orig.numpy(),corners_model.numpy())
         loss = loss_fn(corner_offsets,model_corner_offsets)
     
-        loss.backward()
-        optim.step()
+        #loss.backward()
+        #optim.step()
         #visualize_flow(flow_out[0].detach().cpu().numpy())
         #visualize_flow(flow_gt[0].detach().cpu().numpy())
         loss_sum += loss.item()
@@ -217,8 +224,8 @@ def train(model, loss_fn, optim, epochs, data_gen):
         eval_sum += loss_sum
         eval_count += 1
         
-        #for i in range(len(img)):
-        #    show_corners_on_image(orig_img[i].detach().cpu().numpy(),corners[i].detach().cpu().numpy(),transformed_corners[i].detach().cpu().numpy(),corners[i].detach().cpu().numpy()+(torch.reshape(model_corner_offsets,(-1,4,2))[i].detach().cpu().numpy()*32-16))
+        for i in range(len(img)):
+            show_corners_on_image(orig_img[i].detach().cpu().numpy(),corners[i].detach().cpu().numpy(),transformed_corners[i].detach().cpu().numpy(),corners[i].detach().cpu().numpy()+(torch.reshape(model_corner_offsets,(-1,4,2))[i].detach().cpu().numpy()*32-16))
         
         if count % 100 == 0:
             
@@ -230,8 +237,9 @@ def train(model, loss_fn, optim, epochs, data_gen):
     print("Total loss: ",eval_sum/eval_count)
         
 model = HomoNet()
-#model.load_state_dict(torch.load("modelv1_1100.pth"))
-#model.eval()
+model.load_state_dict(torch.load("modelv1_1100.pth"))
+model.eval()
+torchinfo.summary(model, (64,2,64,64))
 optim = torch.optim.Adam(model.parameters(), lr=0.00001)
 data_set = ImageDataSet("C:\\Users\\GTAbl\\Desktop\\RV\\Vaja1\\train2017")
 loss_fn = nn.MSELoss()
